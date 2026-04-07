@@ -2,18 +2,63 @@
 
 > **NOTE: This protocol is NOT the legacy Challenge-Handshake Authentication Protocol (CHAP).** This is a completely different protocol named Chain Hash Authentication Protocol.
 
+> **Before submitting issues, please read the FAQ:**
+
+> **提交问题前，请先阅读非人哉问题解答以保护小脑：**
+> - 中文: [FAQ-zh.md](./FAQ-zh.md)  
+> - English: [FAQ.md](./FAQ.md)
+
 ---
 
 ## Project Overview
 
 The CHAP Protocol Family is a collection of lightweight communication protocols designed for connection state management with built-in chain authentication. The core philosophy is derived from the Zigzag Interaction Model (ZIM), where client and server maintain a continuously evolving state through each request-response cycle.
 
+---
+
+## Cryptographic Specifications
+
+### Hash Algorithm
+
+Both CHAP and CHAP-IEM use a hash algorithm to convert the user's secret key into a fixed-length encryption key.
+
+| Parameter | Specification |
+|-----------|---------------|
+| Algorithm | SHA-256 |
+| Output Length | 256 bits (32 bytes) |
+| Input | User password / secret key |
+| Output | Pre-shared key K |
+
+**Note**: The hash operation is performed only once during the login phase. The resulting value K serves as the pre-shared symmetric key for the initial encrypted exchange.
+
+### Encryption Algorithm
+
+Both CHAP and CHAP-IEM use AES for all encrypted communications.
+
+| Parameter | Specification |
+|-----------|---------------|
+| Algorithm | AES-256 |
+| Mode | Not specified (implementation dependent, recommended: GCM or CBC with proper padding) |
+| Key Length | 256 bits |
+| Block Size | 128 bits |
+
+**Key Usage**:
+
+| Protocol Phase | CHAP | CHAP-IEM |
+|----------------|------|----------|
+| Login Phase | AES256_K | AES256_K |
+| Operation Phase | AES256_K (key remains K) | AES256_IDn (key changes with each operation) |
+
+---
+
+## Protocol Family Overview
+
 ### What is CHAP?
 
 CHAP (Chain Hash Authentication Protocol) is a general-purpose protocol that can adapt to HTTP, HTTPS, TCP, WebSocket, and other transport protocols. Its core design targets connection state management rather than multi-user authentication. The protocol uses pre-shared keys for encryption and maintains a chained ID system where each successful operation destroys the current ID and generates a new one for the next interaction.
 
 **Key features:**
-- Pre-shared key authentication
+- Pre-shared key authentication (SHA-256 → AES-256)
 - Chain-based ID management
 - Built-in exception recovery
 - Not suitable for large-scale multi-user scenarios
@@ -33,6 +78,8 @@ CHAP-IEM (ID Encryption Mode) is a derivative variant of standard CHAP. The core
 - Subsequent operations use the current ID as the encryption key
 - Keys change continuously, providing forward secrecy
 - No automatic sync recovery; requires re-authentication when out of sync
+
+**Cryptographic note for CHAP-IEM**: The ID values used as encryption keys must meet the same security requirements as any AES-256 key. Implementations should ensure IDs have sufficient entropy (at least 256 bits) or apply a KDF (Key Derivation Function) to shorter IDs before using them as encryption keys.
 
 ---
 
