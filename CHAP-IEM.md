@@ -17,7 +17,7 @@ CHAP-IEM (ID Encryption Mode) is a derivative variant of the standard CHAP proto
 | Encryption Key | Always uses pre-shared key K | Uses K during login phase, then switches to current ID |
 | Purpose of ID | Session identifier only | Both session identifier and encryption key |
 | Key Update | Key K remains fixed | Key changes chained with ID |
-| Exception Recovery | Server pushes current ID for sync using K | Requires re-authentication to rebuild key chain |
+| Exception Recovery | Server pushes current ID for sync using K | Automatic sync via K (same as standard CHAP — K retained for recovery channel only) |
 
 ---
 
@@ -31,7 +31,7 @@ The client inputs a username and a secret key, then converts the key into a hash
 
 The server decrypts using the pre-configured key K and verifies the username validity. Upon successful verification, the server generates ID_1, packages the OK result along with ID_1, encrypts them with K, and returns the packet to the client.
 
-The client decrypts with K and obtains ID_1. At this point, the client holds both K and ID_1, but K will not be used in subsequent operations.
+The client decrypts with K and obtains ID_1. At this point, the client holds both K and ID_1. K is retained for potential recovery but is not used for normal operation encryption.
 
 ### 3.2 Normal Operation Workflow
 
@@ -63,11 +63,26 @@ When a response packet is lost, the client's local key remains ID_3, but the ser
 
 The client encrypts a new operation using ID_3 and sends it. The server successfully decrypts using ID_3 (since ID_3 was indeed the last issued ID), but finds that ID_3 is no longer valid — the server expects to receive a confirmation or subsequent operation encrypted with ID_3, but the operation window corresponding to ID_3 has already closed, and the server has moved to ID_4 state.
 
-Because the server no longer holds ID_3 as a valid key (ID_3 has been destroyed), it cannot encrypt any return information using ID_3. The server can only return a special instruction requiring the client to restart the complete login process.
+**Recovery Process (using K as the recovery channel):**
 
-The client re-authenticates, obtains a new K and a new ID_1', and restarts the key chain.
+1. The server, detecting the out-of-sync condition, encrypts a recovery packet using **K** (the pre-shared key from login):
+   ```
+   RecoveryPacket = AES256_K("resync" + ID_4 + "please update local ID")
+   ```
 
-**Comparison with Standard CHAP**: In standard CHAP, the server always holds the fixed key K, so it can encrypt and push the current valid ID to the client to complete synchronization without requiring re-authentication. In CHAP-IEM, the key changes with each ID, and the server cannot encrypt information using a destroyed old key, forcing re-authentication.
+2. The client decrypts the recovery packet using K (which it has retained since login), obtains ID_4, and updates its current encryption key to ID_4.
+
+3. The client sends an acknowledgment encrypted with ID_4.
+
+4. The server decrypts the acknowledgment using ID_4, verifies successful synchronization, and returns a confirmation. Normal operation resumes with ID_4 as the current key.
+
+**Why this is secure:**
+- K is never used for normal operation encryption — it serves only as a recovery channel
+- The recovery channel does not compromise forward secrecy: recovering the current ID_4 does not reveal any previous IDs (ID_1, ID_2, ID_3)
+- An attacker without K cannot trigger or decrypt recovery packets
+- Even if K is compromised, the attacker gains only the ability to obtain the current ID — historical communications remain protected by the destroyed ID chain
+
+**Comparison with Standard CHAP**: In standard CHAP, the server also uses K to push the current ID for synchronization. CHAP-IEM adopts the same recovery mechanism, but K is only used for recovery — normal operations use the ID chain, preserving forward secrecy.
 
 ---
 
@@ -88,11 +103,12 @@ The client re-authenticates, obtains a new K and a new ID_1', and restarts the k
 | Key Fixity | K remains fixed over long term | Keys change continuously |
 | Impact of Single Packet Compromise | Can decrypt all subsequent communications | Affects only the current single packet |
 | Forward Secrecy | Not supported (K leak compromises everything) | Supported (old keys cannot derive new keys) |
-| Sync Mechanism Security | Server can actively push sync | No active sync capability |
+| Sync Mechanism Security | Server pushes sync using K | Server pushes sync using K (recovery channel only) |
 
 ### 4.3 Limitations
 
-When keys become out of sync, re-authentication is mandatory, causing state interruption. If the pre-shared key K from the login phase is compromised, an attacker can complete initial authentication and obtain ID_1, but since K is only used for login, subsequent communications remain protected by the ID chain.
+- When keys become out of sync, a recovery round-trip is required (client → server recovery packet → client ack). This adds latency but does not require re-authentication.
+- If the pre-shared key K from the login phase is compromised, an attacker can complete initial authentication and obtain ID_1, and can also trigger recovery to obtain the current ID. However, subsequent communications remain protected by the ID chain, and historical communications remain protected by forward secrecy.
 
 ---
 
@@ -101,18 +117,17 @@ When keys become out of sync, re-authentication is mandatory, causing state inte
 CHAP-IEM is suitable for the following scenarios:
 
 1. Communication environments with forward secrecy requirements
-2. Applications with short single-session lifetimes
-3. Systems that can tolerate re-authentication overhead
+2. Applications that benefit from automatic key rotation per operation
+3. Systems that need both forward secrecy and automatic recovery
 4. High-security scenarios requiring reduced long-term key exposure risk
 
 Unsuitable scenarios:
 
-1. Environments with poor network quality and high packet loss rates (frequent re-authentication)
-2. Services requiring long-term maintenance of a single session
-3. Critical systems that cannot tolerate connection interruption
+1. Environments where maintaining K securely for the entire session duration is not feasible
+2. Services that cannot tolerate the additional recovery round-trip latency
 
 ---
 
 ## VI. Summary
 
-CHAP-IEM introduces the design concept of "ID as key" based on the standard CHAP login workflow. The login phase still uses the pre-shared key K for identity authentication and ID_1 distribution, after which it switches to a chained encryption mode using IDs as keys. This design sacrifices automatic exception recovery capability in exchange for forward secrecy through automatic key updates after each operation. The choice between standard CHAP and CHAP-IEM is essentially a trade-off between connection continuity and forward secrecy.
+CHAP-IEM introduces the design concept of "ID as key" based on the standard CHAP login workflow. The login phase uses the pre-shared key K for identity authentication and ID_1 distribution, after which it switches to a chained encryption mode using IDs as keys. K is retained as a dedicated recovery channel, enabling automatic synchronization without re-authentication. This design provides forward secrecy through automatic key updates after each operation while maintaining automatic recovery capability — achieving the best of both worlds. The choice between standard CHAP and CHAP-IEM is primarily a trade-off between implementation simplicity (standard CHAP) and forward secrecy (CHAP-IEM).
