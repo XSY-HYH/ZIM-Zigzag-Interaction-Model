@@ -71,3 +71,26 @@ CHAP does not represent a proprietary framework. Its deeper essence is the **Zig
 The core characteristic of this model is that during the interaction between client and server, two consecutive sessions are always offset by one "tooth" while maintaining a meshed state as a whole. Each request carries the current tooth position, and each response advances to the next tooth position, forming a continuous chain of state transitions.
 
 CHAP is merely one exemplary implementation of the ZIM model. Any protocol that conforms to this model can be considered a member of the CHAP family.
+
+---
+
+## VI. Encryption Algorithm Recommendation
+
+For ZIM protocol implementations:
+
+### Preferred: AES-256-CBC with Encrypt-then-MAC (HMAC-SHA-256)
+
+- IV can be random or counter-based (reuse is not catastrophic)
+- MAC provides integrity and prevents padding oracle attacks
+
+### Alternative: AES-256-GCM (if hardware accelerated)
+
+- **WARNING**: Nonce reuse is catastrophic. Implementations MUST ensure unique nonces for each encryption operation under the same key.
+- In CHAP mode (fixed key K), this requires persistent state across sessions.
+- Not recommended for embedded environments without reliable entropy sources.
+
+### Minimal (resource-constrained): AES-256-CBC only
+
+- Relies on ZIM's ID chain for integrity verification
+- Implementations MUST return identical error responses for all failures
+- Acceptable for internal networks or single-user scenarios
