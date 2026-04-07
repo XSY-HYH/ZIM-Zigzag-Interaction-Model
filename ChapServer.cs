@@ -1,219 +1,256 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Collections.Concurrent;
 
-namespace ZIM.Server
+public class CHAPServer
 {
-    public class ChapSession
+    private Dictionary<byte[], int> _loginIndex = new Dictionary<byte[], int>(ByteArrayComparer.Instance);
+    private Dictionary<int, byte[]> _userKeys = new Dictionary<int, byte[]>();
+    private Dictionary<int, UserSession> _userSessions = new Dictionary<int, UserSession>();
+    private Dictionary<int, UserData> _userData = new Dictionary<int, UserData>();
+    
+    public class UserSession
     {
-        public string SessionId { get; set; } = "";
-        public string ClientId { get; set; } = "";
-        public DateTime LastActivity { get; set; }
+        public string CurrentId { get; set; }
+        public byte[] Key { get; set; }
     }
-
-    public class ChapRequest
+    
+    public class UserData
     {
-        public string? SessionId { get; set; }
-        public string? Action { get; set; }
-        public JsonElement? Data { get; set; }
+        public int Id { get; set; }
+        public string Username { get; set; }
+        public string Password { get; set; }
     }
-
-    public class ChapResponse
+    
+    // Byte array comparer for dictionary keys
+    private class ByteArrayComparer : IEqualityComparer<byte[]>
     {
-        public bool Success { get; set; }
-        public string Message { get; set; } = "";
-        public string? NewId { get; set; }
-        public object? Data { get; set; }
-    }
-
-    public class ChapHandler
-    {
-        private readonly byte[] _masterKey;
-        private readonly ConcurrentDictionary<string, ChapSession> _sessions = new();
-        private readonly RandomNumberGenerator _rng = RandomNumberGenerator.Create();
-
-        public ChapHandler(string adminPassword)
+        public static ByteArrayComparer Instance = new ByteArrayComparer();
+        
+        public bool Equals(byte[] x, byte[] y)
         {
-            using var sha256 = SHA256.Create();
-            _masterKey = sha256.ComputeHash(Encoding.UTF8.GetBytes(adminPassword));
+            if (x.Length != y.Length) return false;
+            for (int i = 0; i < x.Length; i++)
+                if (x[i] != y[i]) return false;
+            return true;
         }
-
-        private byte[] Encrypt(byte[] key, string plaintext)
+        
+        public int GetHashCode(byte[] obj)
         {
-            using var aes = Aes.Create();
+            int hash = 17;
+            for (int i = 0; i < obj.Length; i++)
+                hash = hash * 31 + obj[i];
+            return hash;
+        }
+    }
+    
+    public CHAPServer(List<UserData> usersDb)
+    {
+        // Phase 1: Startup precomputation
+        foreach (var user in usersDb)
+        {
+            // Compute pre-shared key K
+            byte[] K = SHA256.HashData(Encoding.UTF8.GetBytes(user.Password));
+            
+            // Compute expected login ciphertext
+            byte[] ciphertext = AesEncrypt(K, user.Username);
+            
+            // Store hash for O(1) lookup
+            byte[] loginHash = SHA256.HashData(ciphertext);
+            _loginIndex[loginHash] = user.Id;
+            
+            // Store K for later use
+            _userKeys[user.Id] = K;
+            _userData[user.Id] = user;
+            
+            // Initialize session state
+            _userSessions[user.Id] = new UserSession
+            {
+                CurrentId = null,
+                Key = K
+            };
+        }
+    }
+    
+    public (bool Success, int? UserId, string CurrentId, byte[] Response) Login(byte[] ciphertext)
+    {
+        // Phase 2: Runtime login with O(1) hash lookup
+        byte[] requestHash = SHA256.HashData(ciphertext);
+        
+        // O(1) lookup
+        if (!_loginIndex.TryGetValue(requestHash, out int userId))
+        {
+            return (false, null, null, null);
+        }
+        
+        // Verify with actual decryption
+        byte[] K = _userKeys[userId];
+        string plaintext = AesDecrypt(K, ciphertext);
+        
+        if (plaintext == _userData[userId].Username)
+        {
+            // Login success - generate first ID
+            string currentId = GenerateId();
+            _userSessions[userId].CurrentId = currentId;
+            
+            // Response: OK + ID_1 encrypted with K
+            string response = $"OK|{currentId}";
+            byte[] encryptedResponse = AesEncrypt(K, response);
+            
+            return (true, userId, currentId, encryptedResponse);
+        }
+        
+        return (false, null, null, null);
+    }
+    
+    public (bool Success, byte[] Response, string Message) Operation(int userId, byte[] encryptedPacket)
+    {
+        if (!_userSessions.TryGetValue(userId, out var session))
+        {
+            return (false, null, "Session not found");
+        }
+        
+        byte[] K = session.Key;
+        string currentId = session.CurrentId;
+        
+        // Decrypt with K
+        string plaintext = AesDecrypt(K, encryptedPacket);
+        
+        // Expected format: "operation_data|id"
+        int lastPipe = plaintext.LastIndexOf('|');
+        if (lastPipe == -1)
+        {
+            return (false, null, "Invalid packet format");
+        }
+        
+        string operationData = plaintext.Substring(0, lastPipe);
+        string receivedId = plaintext.Substring(lastPipe + 1);
+        
+        // Verify ID
+        if (receivedId != currentId)
+        {
+            // Out of sync - return recovery packet
+            string recoveryPacket = $"resync|{currentId}";
+            byte[] encryptedRecovery = AesEncrypt(K, recoveryPacket);
+            return (false, encryptedRecovery, "ID mismatch, resync required");
+        }
+        
+        // Execute operation
+        string result = ExecuteOperation(operationData);
+        
+        // Generate new ID
+        string newId = GenerateId();
+        session.CurrentId = newId;
+        
+        // Response: result + new_id encrypted with K
+        string response = $"{result}|{newId}";
+        byte[] encryptedResponse = AesEncrypt(K, response);
+        
+        return (true, encryptedResponse, "OK");
+    }
+    
+    public (bool Success, byte[] Response, string Message) ResyncConfirm(int userId, byte[] encryptedPacket)
+    {
+        if (!_userSessions.TryGetValue(userId, out var session))
+        {
+            return (false, null, "Session not found");
+        }
+        
+        byte[] K = session.Key;
+        string plaintext = AesDecrypt(K, encryptedPacket);
+        
+        if (plaintext.StartsWith("resync_ack|"))
+        {
+            string receivedId = plaintext.Split('|')[1];
+            if (receivedId == session.CurrentId)
+            {
+                byte[] resyncOk = AesEncrypt(K, "resync_ok");
+                return (true, resyncOk, "Resync successful");
+            }
+        }
+        
+        return (false, null, "Resync failed");
+    }
+    
+    private byte[] AesEncrypt(byte[] key, string plaintext)
+    {
+        using (Aes aes = Aes.Create())
+        {
             aes.Key = key;
             aes.Mode = CipherMode.CBC;
             aes.Padding = PaddingMode.PKCS7;
             aes.GenerateIV();
-
-            using var encryptor = aes.CreateEncryptor();
-            var plainBytes = Encoding.UTF8.GetBytes(plaintext);
-            var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-
-            var result = new byte[aes.IV.Length + cipherBytes.Length];
-            Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-            Buffer.BlockCopy(cipherBytes, 0, result, aes.IV.Length, cipherBytes.Length);
-            return result;
-        }
-
-        private string? Decrypt(byte[] key, byte[] ciphertextWithIv)
-        {
-            try
+            
+            byte[] plainBytes = Encoding.UTF8.GetBytes(plaintext);
+            
+            using (var encryptor = aes.CreateEncryptor())
             {
-                using var aes = Aes.Create();
-                aes.Key = key;
-                aes.Mode = CipherMode.CBC;
-                aes.Padding = PaddingMode.PKCS7;
-
-                var iv = new byte[16];
-                Buffer.BlockCopy(ciphertextWithIv, 0, iv, 0, 16);
-                aes.IV = iv;
-
-                var ciphertext = new byte[ciphertextWithIv.Length - 16];
-                Buffer.BlockCopy(ciphertextWithIv, 16, ciphertext, 0, ciphertext.Length);
-
-                using var decryptor = aes.CreateDecryptor();
-                var plainBytes = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
+                byte[] ciphertext = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+                
+                // Combine IV + ciphertext
+                byte[] result = new byte[aes.IV.Length + ciphertext.Length];
+                Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
+                Buffer.BlockCopy(ciphertext, 0, result, aes.IV.Length, ciphertext.Length);
+                
+                return result;
+            }
+        }
+    }
+    
+    private string AesDecrypt(byte[] key, byte[] ciphertextWithIv)
+    {
+        using (Aes aes = Aes.Create())
+        {
+            aes.Key = key;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+            
+            // Extract IV (first 16 bytes)
+            byte[] iv = new byte[16];
+            byte[] ciphertext = new byte[ciphertextWithIv.Length - 16];
+            Buffer.BlockCopy(ciphertextWithIv, 0, iv, 0, 16);
+            Buffer.BlockCopy(ciphertextWithIv, 16, ciphertext, 0, ciphertext.Length);
+            
+            aes.IV = iv;
+            
+            using (var decryptor = aes.CreateDecryptor())
+            {
+                byte[] plainBytes = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
                 return Encoding.UTF8.GetString(plainBytes);
             }
-            catch
-            {
-                return null;
-            }
         }
-
-        private string GenerateSessionId()
+    }
+    
+    private string GenerateId()
+    {
+        byte[] randomBytes = new byte[16];
+        using (var rng = RandomNumberGenerator.Create())
         {
-            var bytes = new byte[32];
-            _rng.GetBytes(bytes);
-            return Convert.ToHexString(bytes);
+            rng.GetBytes(randomBytes);
         }
+        return Convert.ToHexString(randomBytes).ToLower();
+    }
+    
+    private string ExecuteOperation(string operationData)
+    {
+        // Implementation dependent
+        return $"Result of: {operationData}";
+    }
+}
 
-        private ChapResponse ErrorResponse(string message, string? newId = null)
+// SHA256 helper for .NET Framework (if not using .NET 6+)
+#if !NET6_0_OR_GREATER
+public static class SHA256
+{
+    public static byte[] HashData(byte[] bytes)
+    {
+        using (var sha256 = System.Security.Cryptography.SHA256.Create())
         {
-            return new ChapResponse { Success = false, Message = message, NewId = newId };
-        }
-
-        private ChapResponse SuccessResponse(string message, string? newId = null, object? data = null)
-        {
-            return new ChapResponse { Success = true, Message = message, NewId = newId, Data = data };
-        }
-
-        public byte[] HandleLogin(byte[] encryptedData, string clientId)
-        {
-            var decrypted = Decrypt(_masterKey, encryptedData);
-            if (decrypted == null)
-            {
-                var response = ErrorResponse("authentication_failed");
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            var username = decrypted.Trim();
-            if (username != "admin")
-            {
-                var response = ErrorResponse("authentication_failed");
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            var sessionId = GenerateSessionId();
-            _sessions[sessionId] = new ChapSession
-            {
-                SessionId = sessionId,
-                ClientId = clientId,
-                LastActivity = DateTime.UtcNow
-            };
-
-            var successResponse = SuccessResponse("login_success", sessionId);
-            return Encrypt(_masterKey, JsonSerializer.Serialize(successResponse));
-        }
-
-        public byte[] HandleOperation(byte[] encryptedData, string clientId)
-        {
-            var decrypted = Decrypt(_masterKey, encryptedData);
-            if (decrypted == null)
-            {
-                var response = ErrorResponse("decryption_failed");
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            ChapRequest? request;
-            try
-            {
-                request = JsonSerializer.Deserialize<ChapRequest>(decrypted);
-            }
-            catch
-            {
-                var response = ErrorResponse("invalid_request");
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            if (string.IsNullOrEmpty(request?.SessionId))
-            {
-                var response = ErrorResponse("missing_session_id");
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            if (!_sessions.TryGetValue(request.SessionId, out var session))
-            {
-                var currentValidId = _sessions.Keys.FirstOrDefault();
-                var response = ErrorResponse("session_expired", currentValidId);
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            if (session.ClientId != clientId)
-            {
-                var response = ErrorResponse("client_mismatch");
-                return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-            }
-
-            _sessions.TryRemove(request.SessionId, out _);
-
-            var newSessionId = GenerateSessionId();
-            _sessions[newSessionId] = new ChapSession
-            {
-                SessionId = newSessionId,
-                ClientId = clientId,
-                LastActivity = DateTime.UtcNow
-            };
-
-            object? operationResult = null;
-            if (request.Action != null)
-            {
-                operationResult = new { action = request.Action, processed = true, timestamp = DateTime.UtcNow };
-            }
-
-            var response = SuccessResponse("operation_success", newSessionId, operationResult);
-            return Encrypt(_masterKey, JsonSerializer.Serialize(response));
-        }
-
-        public bool ValidateSession(string sessionId, string clientId)
-        {
-            if (!_sessions.TryGetValue(sessionId, out var session))
-                return false;
-            
-            if (session.ClientId != clientId)
-                return false;
-            
-            if (DateTime.UtcNow - session.LastActivity > TimeSpan.FromHours(1))
-            {
-                _sessions.TryRemove(sessionId, out _);
-                return false;
-            }
-            
-            session.LastActivity = DateTime.UtcNow;
-            return true;
-        }
-
-        public void CleanupExpiredSessions()
-        {
-            var expired = _sessions
-                .Where(s => DateTime.UtcNow - s.Value.LastActivity > TimeSpan.FromHours(1))
-                .Select(s => s.Key)
-                .ToList();
-            
-            foreach (var id in expired)
-                _sessions.TryRemove(id, out _);
+            return sha256.ComputeHash(bytes);
         }
     }
 }
+#endif
