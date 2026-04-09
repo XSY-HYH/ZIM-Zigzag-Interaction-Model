@@ -1,9 +1,14 @@
+# Flowchart-code.md
+
 **这个文档是专门给非识图AI看的，如果你是人那你可以忽略了**
 
 **This document is specifically intended for AI that does not perform image recognition. If you are a human, you can ignore it.**
 
+---
 
-CHAP:
+## CHAP
+
+```mermaid
 sequenceDiagram
     participant C as Client
     participant S as Server
@@ -12,7 +17,7 @@ sequenceDiagram
     Note over C: User enters password<br/>Compute hash(password) = Key K
 
     rect rgb(128, 128, 128)
-        Note over C,S: 【Login Phase】
+        Note over C,S: [Login Phase]
         C->>S: ① Login packet = AES256_K(username)
         Note right of A: Intercept ciphertext<br/>No K → Cannot decrypt
         
@@ -21,6 +26,7 @@ sequenceDiagram
             S-->>C: ❌ Error, disconnect
         end
         
+        Note over S: Generate random ID_1<br/>(MUST be cryptographically random)
         S->>C: ② Response packet = AES256_K(login success + ID_1)
         Note right of A: Intercept ciphertext<br/>No K → Cannot read ID_1
         
@@ -28,10 +34,10 @@ sequenceDiagram
     end
 
     rect rgb(128, 128, 128)
-        Note over C,S: 【First Operation - Normal Flow】
+        Note over C,S: [First Operation - Normal Flow]
         C->>S: ③ Operation packet = AES256_K(command + ID_1)
         
-        S->>S: Decrypt success ✓<br/>ID_1 valid ✓<br/>Execute command<br/>Destroy ID_1<br/>Generate ID_2
+        S->>S: Decrypt success ✓<br/>ID_1 valid ✓<br/>Execute command<br/>Destroy ID_1<br/>Generate random ID_2 (MUST be random)
         
         S->>C: ④ Response packet = AES256_K(result + ID_2)
         
@@ -39,10 +45,10 @@ sequenceDiagram
     end
 
     rect rgb(128, 128, 128)
-        Note over C,S: 【Second Operation - Normal Flow】
+        Note over C,S: [Second Operation - Normal Flow]
         C->>S: ⑤ Operation packet = AES256_K(command + ID_2)
         
-        S->>S: Decrypt success ✓<br/>ID_2 valid ✓<br/>Execute command<br/>Destroy ID_2<br/>Generate ID_3
+        S->>S: Decrypt success ✓<br/>ID_2 valid ✓<br/>Execute command<br/>Destroy ID_2<br/>Generate random ID_3 (MUST be random)
         
         S->>C: ⑥ Response packet = AES256_K(result + ID_3)
         
@@ -50,10 +56,10 @@ sequenceDiagram
     end
 
     rect rgb(255, 255, 150)
-        Note over C,S: 【Error Scenario: Response lost, client ID out of sync】
+        Note over C,S: [Error Scenario: Response lost, client ID out of sync]
         C->>S: ⑦ Operation packet = AES256_K(command + ID_3)
         
-        S->>S: Decrypt success ✓<br/>ID_3 valid ✓<br/>Execute command<br/>Destroy ID_3<br/>Generate ID_4
+        S->>S: Decrypt success ✓<br/>ID_3 valid ✓<br/>Execute command<br/>Destroy ID_3<br/>Generate random ID_4 (MUST be random)
         
         S->>C: ⑧ Response packet = AES256_K(result + ID_4)
         Note over S,C: ❌ Network failure, response lost
@@ -65,7 +71,7 @@ sequenceDiagram
         
         S->>S: Decrypt success ✓<br/>Check ID_3 → Already invalid ❌<br/>(ID_3 destroyed, ID_4 is current)
         
-        Note over S: 【Auto Recovery Logic】
+        Note over S: [Auto Recovery Logic]
         S->>C: ⑩ Recovery packet = AES256_K("resync" + ID_4 + "please update local ID")
         
         C->>C: Decrypt to get ID_4<br/>Update local ID to ID_4
@@ -78,7 +84,7 @@ sequenceDiagram
     end
 
     rect rgb(70, 130, 255)
-        Note over A: 【Attacker attempts replay】
+        Note over A: [Attacker attempts replay]
         A->>S: Replay old packet ③ (contains ID_1)
         S->>S: Decrypt success ✓<br/>But ID_1 already invalid ❌
         S-->>A: Reject operation, ID invalid
@@ -88,8 +94,14 @@ sequenceDiagram
         S-->>A: Reject, decryption failed
     end
 
-    Note over C,S: Normal operation: each request carries current ID → server destroys old ID, generates new ID → forms chain state<br/>Error recovery: server detects stale ID → returns current ID → client syncs and resumes
-CHAP-zh:
+    Note over C,S: Normal operation: each request carries current ID → server destroys old ID, generates new random ID → forms chain state<br/>Error recovery: server detects stale ID → returns current ID → client syncs and resumes<br/><br/>⚠️ CRITICAL: All IDs MUST be generated using a cryptographically secure random number generator. Predictable IDs (sequential, timestamp-based, etc.) allow session hijacking and are a severe security vulnerability.
+```
+
+---
+
+## CHAP-zh
+
+```mermaid
 sequenceDiagram
     participant C as 客户端
     participant S as 服务端
@@ -107,6 +119,7 @@ sequenceDiagram
             S-->>C: ❌ 报错断开
         end
         
+        Note over S: 生成随机 ID_1<br/>（必须使用密码学安全随机数）
         S->>C: ② 响应包 = AES256_K(登录成功 + ID_1)
         Note right of A: 截获密文<br/>无K → 读不出ID_1
         
@@ -117,7 +130,7 @@ sequenceDiagram
         Note over C,S: 【第一次操作 - 正常流程】
         C->>S: ③ 操作包 = AES256_K(操作指令 + ID_1)
         
-        S->>S: 解密成功 ✓<br/>校验ID_1有效 ✓<br/>执行操作<br/>销毁ID_1<br/>生成ID_2
+        S->>S: 解密成功 ✓<br/>校验ID_1有效 ✓<br/>执行操作<br/>销毁ID_1<br/>生成随机 ID_2（必须随机）
         
         S->>C: ④ 响应包 = AES256_K(操作结果 + ID_2)
         
@@ -128,7 +141,7 @@ sequenceDiagram
         Note over C,S: 【第二次操作 - 正常流程】
         C->>S: ⑤ 操作包 = AES256_K(操作指令 + ID_2)
         
-        S->>S: 解密成功 ✓<br/>校验ID_2有效 ✓<br/>执行操作<br/>销毁ID_2<br/>生成ID_3
+        S->>S: 解密成功 ✓<br/>校验ID_2有效 ✓<br/>执行操作<br/>销毁ID_2<br/>生成随机 ID_3（必须随机）
         
         S->>C: ⑥ 响应包 = AES256_K(操作结果 + ID_3)
         
@@ -139,7 +152,7 @@ sequenceDiagram
         Note over C,S: 【异常场景：响应包丢失，客户端ID不同步】
         C->>S: ⑦ 操作包 = AES256_K(操作指令 + ID_3)
         
-        S->>S: 解密成功 ✓<br/>校验ID_3有效 ✓<br/>执行操作<br/>销毁ID_3<br/>生成ID_4
+        S->>S: 解密成功 ✓<br/>校验ID_3有效 ✓<br/>执行操作<br/>销毁ID_3<br/>生成随机 ID_4（必须随机）
         
         S->>C: ⑧ 响应包 = AES256_K(操作结果 + ID_4)
         Note over S,C: ❌ 网络故障，响应包丢失
@@ -174,8 +187,14 @@ sequenceDiagram
         S-->>A: 拒绝，解密失败
     end
 
-    Note over C,S: 正常操作：每次携带当前ID → 服务端销毁旧ID生成新ID → 形成链式状态<br/>异常恢复：服务端发现旧ID失效 → 返回当前有效ID → 客户端同步后继续
-CHAP-iem:
+    Note over C,S: 正常操作：每次携带当前ID → 服务端销毁旧ID生成新随机ID → 形成链式状态<br/>异常恢复：服务端发现旧ID失效 → 返回当前有效ID → 客户端同步后继续<br/><br/>⚠️ 关键安全要求：所有 ID 必须使用密码学安全随机数生成器生成。可预测的 ID（如递增序列、时间戳等）会导致会话劫持，属于严重安全漏洞。
+```
+
+---
+
+## CHAP-IEM
+
+```mermaid
 sequenceDiagram
     participant C as Client
     participant S as Server
@@ -189,6 +208,8 @@ sequenceDiagram
         alt Decrypt fails or username invalid
             S-->>C: Error, connection closed
         end
+        
+        Note over S: Generate random ID_1<br/>(MUST be cryptographically random)
         S->>C: 2. Response = AES256_K(OK + ID_1)
         C->>C: Decrypt with K<br/>Obtain ID_1<br/>Current encryption key = ID_1<br/>(K retained for recovery only)
     end
@@ -197,7 +218,7 @@ sequenceDiagram
         Note over C,S: [Operation 1 - Using ID_1 as key]
         C->>C: Encrypt command with ID_1
         C->>S: 3. Operation Packet = AES256_ID1(command)
-        S->>S: Decrypt with ID_1<br/>Execute command<br/>Generate ID_2
+        S->>S: Decrypt with ID_1<br/>Execute command<br/>Generate random ID_2 (MUST be random)
         S->>C: 4. Response = AES256_ID1(result + ID_2)
         C->>C: Decrypt with ID_1<br/>Obtain result and ID_2<br/>Update encryption key to ID_2
     end
@@ -206,7 +227,7 @@ sequenceDiagram
         Note over C,S: [Operation 2 - Using ID_2 as key]
         C->>C: Encrypt command with ID_2
         C->>S: 5. Operation Packet = AES256_ID2(command)
-        S->>S: Decrypt with ID_2<br/>Execute command<br/>Generate ID_3
+        S->>S: Decrypt with ID_2<br/>Execute command<br/>Generate random ID_3 (MUST be random)
         S->>C: 6. Response = AES256_ID2(result + ID_3)
         C->>C: Decrypt with ID_2<br/>Obtain result and ID_3<br/>Update encryption key to ID_3
     end
@@ -239,8 +260,14 @@ sequenceDiagram
         S-->>A: Decrypt fails, rejected
     end
 
-    Note over C,S: Key chain: K → ID_1 → ID_2 → ID_3 → ...<br/>Each operation uses current ID as encryption key<br/>K retained for recovery channel only → forward secrecy preserved
-CHAP-IEM-zh:
+    Note over C,S: Key chain: K → ID_1 → ID_2 → ID_3 → ...<br/>Each operation uses current ID as encryption key<br/>K retained for recovery channel only → forward secrecy preserved<br/><br/>⚠️ CRITICAL: All IDs MUST be generated using a cryptographically secure random number generator. Since IDs serve as encryption keys in CHAP-IEM, predictable IDs completely break the security model.
+```
+
+---
+
+## CHAP-IEM-zh
+
+```mermaid
 sequenceDiagram
     participant C as 客户端
     participant S as 服务端
@@ -254,6 +281,8 @@ sequenceDiagram
         alt 解密失败或用户名无效
             S-->>C: 错误，连接断开
         end
+        
+        Note over S: 生成随机 ID_1<br/>（必须使用密码学安全随机数）
         S->>C: ② 响应包 = AES256_K(OK + ID_1)
         C->>C: 用 K 解密<br/>获得 ID_1<br/>当前加密密钥 = ID_1<br/>（K 保留仅用于恢复通道）
     end
@@ -262,7 +291,7 @@ sequenceDiagram
         Note over C,S: 【操作一 - 使用 ID_1 作为密钥】
         C->>C: 用 ID_1 加密指令
         C->>S: ③ 操作包 = AES256_ID1(操作指令)
-        S->>S: 用 ID_1 解密<br/>执行操作<br/>生成 ID_2
+        S->>S: 用 ID_1 解密<br/>执行操作<br/>生成随机 ID_2（必须随机）
         S->>C: ④ 响应包 = AES256_ID1(操作结果 + ID_2)
         C->>C: 用 ID_1 解密<br/>获得操作结果和 ID_2<br/>更新加密密钥为 ID_2
     end
@@ -271,7 +300,7 @@ sequenceDiagram
         Note over C,S: 【操作二 - 使用 ID_2 作为密钥】
         C->>C: 用 ID_2 加密指令
         C->>S: ⑤ 操作包 = AES256_ID2(操作指令)
-        S->>S: 用 ID_2 解密<br/>执行操作<br/>生成 ID_3
+        S->>S: 用 ID_2 解密<br/>执行操作<br/>生成随机 ID_3（必须随机）
         S->>C: ⑥ 响应包 = AES256_ID2(操作结果 + ID_3)
         C->>C: 用 ID_2 解密<br/>获得操作结果和 ID_3<br/>更新加密密钥为 ID_3
     end
@@ -304,4 +333,16 @@ sequenceDiagram
         S-->>A: 解密失败，拒绝
     end
 
-    Note over C,S: 密钥链：K → ID_1 → ID_2 → ID_3 → ...<br/>每次操作使用当前 ID 作为加密密钥<br/>K 仅用于恢复通道 → 前向安全不受影响
+    Note over C,S: 密钥链：K → ID_1 → ID_2 → ID_3 → ...<br/>每次操作使用当前 ID 作为加密密钥<br/>K 仅用于恢复通道 → 前向安全不受影响<br/><br/>⚠️ 关键安全要求：所有 ID 必须使用密码学安全随机数生成器生成。在 CHAP-IEM 中 ID 同时作为加密密钥，可预测的 ID 会彻底破坏整个安全模型。
+```
+
+---
+
+## Summary of Changes
+
+| Location | Change |
+|----------|--------|
+| Login Phase (all diagrams) | Added note: "Generate random ID_1 (MUST be cryptographically random)" |
+| Each operation (all diagrams) | Added note: "Generate random ID_n (MUST be random)" |
+| Footer note (CHAP) | Added critical warning about predictable IDs leading to session hijacking |
+| Footer note (CHAP-IEM) | Added critical warning that predictable IDs completely break security model |
