@@ -1,3 +1,7 @@
+以下是更新后的 README.md，已添加 CHAP-IEM-SKN 的文档导航和警告说明：
+
+---
+
 # CHAP Protocol Family Documentation Index
 
 > **NOTE: This protocol is NOT the legacy Challenge-Handshake Authentication Protocol (CHAP).** This is a completely different protocol named Chain Hash Authentication Protocol.
@@ -98,6 +102,20 @@ CHAP-IEM (ID Encryption Mode) is a derivative variant of standard CHAP. The core
 
 **Cryptographic note for CHAP-IEM**: The ID values used as encryption keys must meet the same security requirements as any AES-256 key. Implementations should ensure IDs have sufficient entropy (at least 256 bits) or apply a KDF (Key Derivation Function) to shorter IDs before using them as encryption keys.
 
+### What is CHAP-IEM-SKN?
+
+CHAP-IEM-SKN (Secure Key Negotiation) is a further enhancement of CHAP-IEM that introduces a pre-shared key mixing exchange mechanism. The core innovation: using the pre-shared key as a "root" to mix with random values, both parties negotiate a session key without exposing the pre-shared secret. This design is inherently resistant to offline brute force attacks.
+
+**Key differences from CHAP-IEM:**
+- Login key derived from key exchange instead of direct password hash
+- Pre-shared key can be low entropy (e.g., PIN code)
+- Offline brute force resistance
+- Retains all IEM features (chained keys, forward secrecy, exception recovery)
+
+> **⚠️ IMPLEMENTATION WARNING:** The CHAP-IEM-SKN variant currently has NO implementation examples in this repository. If you intend to use this variant in production, please exercise extreme caution — conduct thorough security reviews, testing, and validation before deployment.
+
+> **⚠️ 实现警告：** CHAP-IEM-SKN 变体目前在本仓库中**没有**实现示例。如果计划在生产环境中使用此变体，请务必谨慎——在部署前进行充分的安全审查、测试和验证。
+
 ---
 
 ## Documentation Navigation
@@ -116,17 +134,31 @@ CHAP-IEM (ID Encryption Mode) is a derivative variant of standard CHAP. The core
 | English | [CHAP-IEM.md](./CHAP-IEM.md) |
 | Chinese | [CHAP-IEM-zh.md](./CHAP-IEM-zh.md) |
 
+### CHAP-IEM-SKN Variant (Secure Key Negotiation)
+
+| Language | Document |
+|----------|----------|
+| English | [CHAP-IEM-SKN.md](./CHAP-IEM-SKN.md) |
+| Chinese | [CHAP-IEM-SKN-zh.md](./CHAP-IEM-SKN-zh.md) |
+
+> **⚠️ Note:** CHAP-IEM-SKN is a theoretical specification. No implementation examples are provided in this repository. Production use requires independent implementation and thorough security validation.
+
+> **⚠️ 注意：** CHAP-IEM-SKN 为理论规范。本仓库未提供实现示例。生产环境使用需要自行实现并进行充分的安全验证。
+
 ---
 
 ## Quick Comparison
 
-| Feature | CHAP | CHAP-IEM |
-|---------|------|----------|
-| Encryption Key | Fixed pre-shared key K | Switches from K to current ID |
-| ID Purpose | Session identifier only | Identifier + encryption key |
-| Exception Recovery | Automatic sync via K | Automatic sync via K (recovery channel uses K, operation encryption uses ID chain) |
-| Forward Secrecy | Not supported | Supported |
-| Best For | Maximum compatibility, simple implementation | Forward secrecy with automatic recovery |
+| Feature | CHAP | CHAP-IEM | CHAP-IEM-SKN |
+|---------|------|----------|--------------|
+| Encryption Key | Fixed pre-shared key K | Switches from K to current ID | Switches from K_session to current ID |
+| ID Purpose | Session identifier only | Identifier + encryption key | Identifier + encryption key |
+| Exception Recovery | Automatic sync via K | Automatic sync via K | Automatic sync via K_session |
+| Forward Secrecy | Not supported | Supported | Supported |
+| Offline Brute Force Risk | Yes | Yes | **None** |
+| Pre-shared Secret Entropy | High (password) | High (password) | **Low (PIN, key, etc.)** |
+| Implementation Examples | Yes | Yes | **No (theoretical only)** |
+| Best For | Maximum compatibility | Forward secrecy with auto recovery | Maximum security with low-entropy pre-shared secrets |
 
 ---
 
@@ -135,4 +167,5 @@ CHAP-IEM (ID Encryption Mode) is a derivative variant of standard CHAP. The core
 - **For understanding the fundamental protocol**: Start with CHAP documentation
 - **For learning the underlying theory**: Read CHAP first, then the ZIM concept
 - **For high-security applications**: Review CHAP-IEM after understanding standard CHAP
-- **For implementation decisions**: Compare the exception recovery and security trade-offs between both variants
+- **For maximum security with low-entropy pre-shared secrets**: Study CHAP-IEM-SKN specification (theoretical, use with caution)
+- **For implementation decisions**: Compare the exception recovery and security trade-offs across all three variants
