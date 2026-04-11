@@ -1,7 +1,3 @@
-以下是更新后的 README.md，已添加 CHAP-IEM-SKN 的文档导航和警告说明：
-
----
-
 # CHAP Protocol Family Documentation Index
 
 > **NOTE: This protocol is NOT the legacy Challenge-Handshake Authentication Protocol (CHAP).** This is a completely different protocol named Chain Hash Authentication Protocol.
