@@ -141,6 +141,17 @@ CHAP-IEM-SKN (Secure Key Negotiation) is a further enhancement of CHAP-IEM that 
 
 > **⚠️ 注意：** CHAP-IEM-SKN 为理论规范。本仓库未提供实现示例。生产环境使用需要自行实现并进行充分的安全验证。
 
+### Bidirectional Communication
+
+| Language | Document |
+|----------|----------|
+| English | [BCPF.md](./BCPF.md) |
+| Chinese | [BCPF-zh.md](./BCPF-zh.md) |
+
+> **📖 About BCPF:** This document discusses server-initiated push messaging and bidirectional communication support across the CHAP protocol family, covering CHAP, CHAP-IEM, and CHAP-IEM-SKN.
+
+> **📖 关于 BCPF：** 本文档讨论 CHAP 协议家族的服务端主动推送和双向通信支持，涵盖 CHAP、CHAP-IEM 和 CHAP-IEM-SKN。
+
 ---
 
 ## Quick Comparison
@@ -164,4 +175,5 @@ CHAP-IEM-SKN (Secure Key Negotiation) is a further enhancement of CHAP-IEM that 
 - **For learning the underlying theory**: Read CHAP first, then the ZIM concept
 - **For high-security applications**: Review CHAP-IEM after understanding standard CHAP
 - **For maximum security with low-entropy pre-shared secrets**: Study CHAP-IEM-SKN specification (theoretical, use with caution)
+- **For bidirectional communication patterns**: Read BCPF documentation
 - **For implementation decisions**: Compare the exception recovery and security trade-offs across all three variants
