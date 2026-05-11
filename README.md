@@ -128,6 +128,24 @@ CHAP-IEM-CSW (Concurrent Sliding Window) is an extension of CHAP-IEM that enable
 
 > **📖 Detailed Documentation:** For complete specification including channel negotiation, packet format, sliding window maintenance, and exception recovery, please refer to the dedicated document.
 
+### What is CHAP-IEM-AEAD?
+
+CHAP-IEM-AEAD is a security-hardened variant of CHAP-IEM that mandates **authenticated encryption (AEAD)** and introduces **explicit nonce / sequence number management**.
+
+**Problems Solved:**
+- Original CHAP-IEM does not specify encryption mode (CBC has padding oracle risks)
+- No integrity protection for ciphertext
+- No nonce management specification (GCM nonce reuse is catastrophic)
+- Single-layer replay protection (ID only)
+
+**Key Innovations:**
+- **Mandatory AEAD** (AES-256-GCM or ChaCha20-Poly1305)
+- **Explicit 12-byte nonce** with embedded monotonic sequence number
+- **Dual replay protection**: ID single-use + sequence number monotonic check
+- Guaranteed `(key, nonce)` uniqueness
+
+> **📖 Detailed Documentation:** For complete specification including nonce construction, packet format, and sequence number checking, please refer to the dedicated document.
+
 ### What is CHAP-DH?
 
 CHAP-DH is an anonymous variant of CHAP-IEM that removes the login phase and replaces it with Diffie-Hellman key exchange.
@@ -185,6 +203,17 @@ CHAP-DH is an anonymous variant of CHAP-IEM that removes the login phase and rep
 
 > **📖 关于 CSW：** 此扩展将 CHAP-IEM 转变为适用于 HTTP/2、gRPC、实时多人游戏和现代 Web API 的协议，在保持前向安全性、抗重放和自动恢复能力的同时支持并发请求处理。
 
+### CHAP-IEM-AEAD Variant (Authenticated Encryption)
+
+| Language | Document |
+|----------|----------|
+| English | [CHAP-IEM-AEAD.md](./CHAP-IEM-AEAD.md) |
+| Chinese | [CHAP-IEM-AEAD-zh.md](./CHAP-IEM-AEAD-zh.md) |
+
+> **📖 About AEAD:** This security-hardened variant mandates authenticated encryption (AES-256-GCM or ChaCha20-Poly1305) and explicit nonce management, eliminating CBC padding oracle risks and GCM nonce reuse vulnerabilities while adding dual-layer replay protection.
+
+> **📖 关于 AEAD：** 此安全强化变体强制使用认证加密（AES-256-GCM 或 ChaCha20-Poly1305）和显式 nonce 管理，消除 CBC 填充预言机风险和 GCM nonce 重用漏洞，同时增加双层抗重放保护。
+
 ### CHAP-DH Variant (Anonymous DH)
 
 | Language | Document |
@@ -211,18 +240,20 @@ CHAP-DH is an anonymous variant of CHAP-IEM that removes the login phase and rep
 
 ## Quick Comparison
 
-| Feature | CHAP | CHAP-IEM | CHAP-IEM-SKN | CHAP-IEM-CSW | CHAP-DH |
-|---------|------|----------|--------------|--------------|---------|
-| Encryption Key | Fixed pre-shared key K | Switches from K to current ID | Switches from K_session to current ID | Per-channel ID chain | Switches from K to current ID |
-| ID Generation | Server | Server | Server | **Client (pre-forwarded)** | **Either party** |
-| Pre-shared Secret | Required (password) | Required (password) | Required (Y - low entropy) | Required (password) | **Not required** |
-| Authentication | Yes | Yes | Yes | Yes | **No (anonymous)** |
-| Server Key Table | Required | Required | Required | Required | **Not required** |
-| Forward Secrecy | No | Yes | Yes | Yes | Yes |
-| Asynchronous Concurrency | No | No | No | **Yes** | No |
-| Offline Brute Force Risk | Yes | Yes | **None** | Yes | **None** |
-| Implementation Examples | Yes | Yes | **No** | Yes (spec) | Yes (spec) |
-| Best For | Maximum compatibility | Forward secrecy with auto recovery | Low-entropy pre-shared secrets | High concurrency (HTTP/2, gRPC) | **Anonymous, zero-config** |
+| Feature | CHAP | CHAP-IEM | CHAP-IEM-SKN | CHAP-IEM-CSW | CHAP-IEM-AEAD | CHAP-DH |
+|---------|------|----------|--------------|--------------|---------------|---------|
+| Encryption Key | Fixed K | Switches from K to ID | Switches from K_session to ID | Per-channel ID chain | ID chain + AEAD | Switches from K to ID |
+| ID Generation | Server | Server | Server | **Client** | Server | **Either party** |
+| Pre-shared Secret | Required | Required | Required (low entropy) | Required | Required | **Not required** |
+| Authentication | Yes | Yes | Yes | Yes | Yes | **No** |
+| Server Key Table | Required | Required | Required | Required | Required | **Not required** |
+| Forward Secrecy | No | Yes | Yes | Yes | Yes | Yes |
+| Asynchronous Concurrency | No | No | No | **Yes** | No | No |
+| Authenticated Encryption | No | No | No | No | **Yes (mandatory)** | No |
+| Dual Replay Protection | No | No | No | Yes (seq + window) | **Yes (ID + seq)** | No |
+| Offline Brute Force Risk | Yes | Yes | **None** | Yes | Yes | **None** |
+| Implementation Examples | Yes | Yes | **No** | Yes (spec) | Yes (spec) | Yes (spec) |
+| Best For | Max compatibility | Forward secrecy | Low-entropy pre-shared secrets | High concurrency | **CBC replacement, high assurance** | **Anonymous, zero-config** |
 
 ---
 
@@ -233,6 +264,7 @@ CHAP-DH is an anonymous variant of CHAP-IEM that removes the login phase and rep
 - **For forward secrecy with authentication**: Review CHAP-IEM after understanding standard CHAP
 - **For low-entropy pre-shared secrets** (PIN codes, etc.): Study CHAP-IEM-SKN specification (theoretical, use with caution)
 - **For high-concurrency scenarios** (HTTP/2, real-time games, parallel APIs): Read CHAP-IEM-CSW specification
+- **For CBC replacement and higher cryptographic assurance**: Read CHAP-IEM-AEAD specification
 - **For anonymous, zero-configuration scenarios** (IoT, temporary access): Read CHAP-DH specification
 - **For bidirectional communication patterns**: Read BCPF documentation
 - **For implementation decisions**: Compare the trade-offs across all variants in the Quick Comparison table
