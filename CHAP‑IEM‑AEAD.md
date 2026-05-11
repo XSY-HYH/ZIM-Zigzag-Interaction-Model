@@ -40,6 +40,7 @@ CHAP‑IEM‑AEAD is a security‑hardened variant of the original CHAP‑IEM th
 | Per‑packet overhead | 0 bytes | 12 bytes nonce + 16 bytes tag |
 | Forward secrecy | ✅ | ✅ |
 | Automatic recovery | ✅ | ✅ |
+| MitM protection | ✅ (via pre‑shared K) | ✅ (via pre‑shared K) |
 
 ---
 
@@ -165,7 +166,27 @@ Same as original IEM: after each request/response, the key updates to a fresh ra
 
 ### 4.5 Man‑in‑the‑Middle Attacks
 
-Like the original CHAP family, **this protocol does not protect against MitM attacks**. It relies on external secure channels (direct connection, VPN, physical security) or user guarantees.
+CHAP‑IEM‑AEAD, like the original CHAP‑IEM, **does protect against MitM attacks** because the pre‑shared key `K` (or `K_session` in SKN mode) is **never transmitted** over the network.
+
+**Why MitM is not possible without knowing K:**
+
+- An attacker cannot decrypt the login handshake (encrypted with `K`)
+- An attacker cannot forge a valid login packet (requires `K` to encrypt)
+- An attacker cannot establish independent sessions with the client and server simultaneously
+
+**The only prerequisite for a successful MitM attack is that the attacker already knows `K`.** If `K` is compromised, the attacker can impersonate either party — but this is a **key compromise** issue, not a protocol vulnerability. Key secrecy is the user's responsibility, just as with any other symmetric‑key protocol (SSH, TLS‑PSK, WireGuard).
+
+### 4.6 Security Summary
+
+| Threat | CHAP‑IEM‑AEAD Protection |
+|--------|--------------------------|
+| Eavesdropping | ✅ (AES‑256 encryption) |
+| Ciphertext tampering | ✅ (AEAD tag verification) |
+| Replay attack | ✅ (ID single‑use + sequence number) |
+| Nonce reuse | ✅ (protocol‑enforced monotonic counters) |
+| Padding oracle | ✅ (AEAD eliminates CBC padding) |
+| Man‑in‑the‑middle | ✅ (requires knowledge of pre‑shared K) |
+| Forward secrecy | ✅ (ID chain destroys old keys) |
 
 ---
 
@@ -210,11 +231,12 @@ This design can be used independently, or embedded as a foundational component i
 - High‑sensitivity environments requiring dual‑layer replay protection
 - Engineering teams needing explicit nonce management specifications to avoid implementation errors
 - Scenarios that can accept 28 bytes of per‑packet overhead but cannot tolerate the full complexity of TLS
+- Deployments that already rely on CHAP‑IEM's MitM protection (via pre‑shared `K`) and want stronger cryptographic guarantees
 
 **Not suitable for:**
 
 - Extremely bandwidth‑constrained environments (e.g., tens of thousands of packets per second with tiny payloads)
-- Environments requiring MitM protection (add TLS above or use other solutions)
+- Scenarios where pre‑shared key distribution is operationally impossible (consider CHAP‑DH for anonymous use cases)
 
 ---
 
@@ -227,8 +249,9 @@ CHAP‑IEM‑AEAD builds upon original CHAP‑IEM by mandating authenticated enc
 | Mandatory AEAD | Eliminates CBC padding oracle risk |
 | Explicit nonce + monotonic sequence number | Prevents catastrophic GCM nonce reuse |
 | Dual replay protection | ID single‑use + sequence number checking |
+| Clear MitM protection statement | Documents that pre‑shared `K` provides MitM resistance |
 
-It preserves all IEM advantages (forward secrecy, automatic recovery, lightweight session state) while aligning with modern cryptographic best practices.
+It preserves all IEM advantages (forward secrecy, automatic recovery, lightweight session state, MitM protection via pre‑shared key) while aligning with modern cryptographic best practices.
 
 This variant can be considered a **security‑hardened profile** of IEM, suitable for deployments requiring higher reliability and willing to accept moderate overhead.
 
@@ -254,4 +277,4 @@ ZIM (Zigzag Interaction Model)
 - NIST SP 800‑38D – AES‑GCM specification
 - RFC 8439 – ChaCha20‑Poly1305
 
-*Document version: 1.0*
+*Document version: 1.1* (MitM section corrected)
