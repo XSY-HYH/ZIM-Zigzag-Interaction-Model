@@ -196,8 +196,8 @@ CHAP-DH is an anonymous variant of CHAP-IEM that removes the login phase and rep
 
 | Language | Document |
 |----------|----------|
-| English | [CHAP-IEM-CSW.md](./CHAP-IEM-CSW.md) |
-| Chinese | [CHAP-IEM-CSW-zh.md](./CHAP-IEM-CSW-zh.md) |
+| English | [CHAP-IEM-CSW.md](./CHAP‑IEM‑CSW.md) |
+| Chinese | [CHAP-IEM-CSW-zh.md](./CHAP‑IEM‑CSW-zh.md) |
 
 > **📖 About CSW:** This extension transforms CHAP-IEM into a protocol suitable for HTTP/2, gRPC, real-time multiplayer games, and modern web APIs where multiple requests must be processed concurrently. It fully preserves forward secrecy, replay protection, and automatic recovery.
 
@@ -207,8 +207,8 @@ CHAP-DH is an anonymous variant of CHAP-IEM that removes the login phase and rep
 
 | Language | Document |
 |----------|----------|
-| English | [CHAP-IEM-AEAD.md](./CHAP-IEM-AEAD.md) |
-| Chinese | [CHAP-IEM-AEAD-zh.md](./CHAP-IEM-AEAD-zh.md) |
+| English | [CHAP-IEM-AEAD.md](./CHAP‑IEM‑AEAD.md) |
+| Chinese | [CHAP-IEM-AEAD-zh.md](./CHAP‑IEM‑AEAD-zh.md) |
 
 > **📖 About AEAD:** This security-hardened variant mandates authenticated encryption (AES-256-GCM or ChaCha20-Poly1305) and explicit nonce management, eliminating CBC padding oracle risks and GCM nonce reuse vulnerabilities while adding dual-layer replay protection.
 
